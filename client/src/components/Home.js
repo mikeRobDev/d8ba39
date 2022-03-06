@@ -49,68 +49,69 @@ const Home = ({ user, logout }) => {
     setConversations((prev) => prev.filter((convo) => convo.id));
   };
 
-  //new message posted to server, front-end should display this message in related components without refresh
   const saveMessage = async (body) => {
     const { data } = await axios.post('/api/messages', body);
-    //once the above Promise has resolved, we send the new message data to the sendMessage() method to emit a signal on our socket to run the new-message handler function
-    //sendMessage(data, body);
-    if (!body.conversationId) {
-      addNewConvo(body.recipientId, data.message);
-    } else {
-      addMessageToConversation(data);
-    }
     return data;
   };
 
-  //the socket architecture relating to sendMessage ('new-message') has been hidden due to the problems it causes when emitting/receiving signals within a single socket (no cooperation with a server-side equivalent limits usefulness)
-  /*const sendMessage = (data, body) => {
+  const sendMessage = (data, body) => {
     socket.emit('new-message', {
       message: data.message,
       recipientId: body.recipientId,
       sender: data.sender,
     });
-  };*/
+  };
 
   const postMessage = (body) => {
-    try {
-      //API request to server
-      const data = saveMessage(body);
-      //here we should either utilize the socket to emit a new-messsage using the request body (would rather use the response as it will ensure validation of new message, but would have to move emit action to server)
-      //maybe call inside saveMessage?
-    } catch (error) {
-      console.error(error);
-    }
-  };
+    //use .then() method to ensure that the Promise is fulfilled before we continue with our handler actions for the post request
+    saveMessage(body).then((data) => {
+      if (!body.conversationId) {
+        addNewConvo(body.recipientId, data.message);
+      } else {
+        addMessageToConversation(data);
+      }
+
+      sendMessage(data, body);
+    }).catch (error => console.error(error));
+  }
 
   const addNewConvo = useCallback(
     (recipientId, message) => {
-      // if recipientId isn't null, that means the message needs to be put in a brand new convo
-      if (message.sender !== null) {
-        //iterate through the conversations list, editing the conversation with an empty conversationId that matches the recipientId (fakeConvo) generated earlier to account for the new message
-        conversations.forEach((convo) => {
-          if (convo.otherUser.id === recipientId) {
-            convo.messages.push(message);
-            convo.latestMessageText = message.text;
-            convo.id = message.conversationId;
-          }
-        });
-        setConversations([...conversations]);
-      }
+      let extendedConvos = [...conversations];
+      extendedConvos.forEach((convo) => {
+        if (convo.otherUser.id === recipientId) {
+          convo.messages.push(message);
+          convo.latestMessageText = message.text;
+          convo.id = message.conversationId;
+        }
+      });
+      setConversations(extendedConvos);
     },
     [setConversations, conversations]
   );
 
   const addMessageToConversation = useCallback(
     (data) => {
-      //iterates through the conversations list, editing the conversation matching the active conversationId and updating it with the new message
-      conversations.forEach((convo) => {
-        if (convo.id === data.message.conversationId) {
-          convo.messages.push(data.message);
-          convo.latestMessageText = data.message.text;
+      // if sender isn't null, that means the message needs to be put in a brand new convo
+      const { message, sender = null } = data;
+      if (sender !== null) {
+        const newConvo = {
+          id: message.conversationId,
+          otherUser: sender,
+          messages: [message],
+        };
+        newConvo.latestMessageText = message.text;
+        setConversations((prev) => [newConvo, ...prev]);
+      }
+
+      let progressingConvos = [...conversations];
+      progressingConvos.forEach((convo) => {
+        if (convo.id === message.conversationId) {
+          convo.messages.push(message);
+          convo.latestMessageText = message.text;
         }
       });
-      //passing a new object to setConversations to ensure a re-render of the components dependent on it as a prop
-      setConversations([...conversations]);
+      setConversations(progressingConvos);
     },
     [setConversations, conversations]
   );
@@ -153,14 +154,14 @@ const Home = ({ user, logout }) => {
     // Socket init
     socket.on('add-online-user', addOnlineUser);
     socket.on('remove-offline-user', removeOfflineUser);
-    //socket.on('new-message', addMessageToConversation);
+    socket.on('new-message', addMessageToConversation);
 
     return () => {
       // before the component is destroyed
       // unbind all event handlers used in this component
       socket.off('add-online-user', addOnlineUser);
       socket.off('remove-offline-user', removeOfflineUser);
-      //socket.off('new-message', addMessageToConversation);
+      socket.off('new-message', addMessageToConversation);
     };
   }, [addMessageToConversation, addOnlineUser, removeOfflineUser, socket]);
 

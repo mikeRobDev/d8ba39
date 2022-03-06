@@ -19,7 +19,7 @@ router.get("/", async (req, res, next) => {
         },
       },
       attributes: ["id"],
-      //messages should display with the latest message first
+      //order our conversations by ____ but the messages in each conversation by earliest message creation time first
       order: [[Message, "createdAt", "ASC"]],
       include: [
         { model: Message, order: ["createdAt", "ASC"] },
@@ -72,6 +72,8 @@ router.get("/", async (req, res, next) => {
       convoJSON.latestMessageText = convoJSON.messages[convoJSON.messages.length - 1].text;
       conversations[i] = convoJSON;
     }
+    //sort the top level conversations array in place by the time associated with their latest message using a comparator arrow function
+    conversations.sort((a, b) => (a.messages[a.messages.length - 1].createdAt < b.messages[b.messages.length - 1].createdAt));
 
     res.json(conversations);
   } catch (error) {
