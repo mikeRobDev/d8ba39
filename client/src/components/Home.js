@@ -21,9 +21,11 @@ const Home = ({ user, logout }) => {
 
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  const [typingStatus, setTypingStatus] = useState([]);
 
   const classes = useStyles();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  var timeout;
 
   const addSearchedUsers = (users) => {
     const currentUsers = {};
@@ -99,6 +101,7 @@ const Home = ({ user, logout }) => {
           id: message.conversationId,
           otherUser: sender,
           messages: [message],
+          unreadMsgCount: 1,
         };
         newConvo.latestMessageText = message.text;
         setConversations((prev) => [newConvo, ...prev]);
@@ -109,16 +112,94 @@ const Home = ({ user, logout }) => {
         if (convo.id === message.conversationId) {
           convo.messages.push(message);
           convo.latestMessageText = message.text;
+          //only update the unreadMsgCount for a user that is not actively viewing the conversation we just updated (otherwise they read it on receipt)
+          if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
+            convo.unreadMsgCount = convo.unreadMsgCount + 1;
+          }else if (message.senderId !== user.id){
+            convo.mostRecentRead = message.text;
+          }
         }
       });
       setConversations(progressingConvos);
     },
-    [setConversations, conversations]
+    [setConversations, conversations, user, activeConversation]
   );
+
+  const saveReceipt = async (body) => {
+    const { data } = await axios.put('/api/conversations', body);
+    return data;
+  };
 
   const setActiveChat = (username) => {
     setActiveConversation(username);
+
+    //setting a new active chat (loading the conversation with the given username) also updates the mostRecentRead 
+    let readConvo = conversations.find(
+      (conversation) => conversation.otherUser.username === username
+    );
+    let readMessage = readConvo.messages.slice().reverse().find(
+      (msg) => msg.senderId !== user.id
+    );
+    let tempBody = {
+      convoId: readConvo.id,
+      newestReceipt: readMessage.text,
+    };
+
+    saveReceipt(tempBody).then((data) => {
+      //update the client's readReceipts for re-rendering of Sidebar and ActiveChat component elements
+      let readerConvos = [...conversations];
+      readerConvos.forEach((convo) => {
+        if (convo.id === data.id) {
+          convo.mostRecentRead = readMessage.text;
+          convo.unreadMsgCount = 0;
+        }
+      });
+      setConversations(readerConvos);
+
+      socket.emit('new-read', {
+        conversationToUpdate: readConvo.id,
+        messageToUpdate: readMessage.text,
+      });
+    });
   };
+
+  const updateReadReceipts = useCallback(
+    (data) => {
+      const {convoToUpdate, msgToUpdate} = data;
+
+      let viewingConvos = [...conversations];
+      viewingConvos.forEach((convo) => {
+        if (convo.id === convoToUpdate) {
+          convo.mostRecentRead = msgToUpdate;
+        }
+      });
+      setConversations(viewingConvos);
+    },
+    [setConversations, conversations]
+  );
+
+  const updateTypingStatus = (convoId) => {
+    socket.emit('new-typing-event', {
+      typingConvo: convoId,
+    });
+  }
+
+  //socket handler to notify our client of other users that are currently typing within our conversations
+  const updateIncomingMessageStatus = useCallback(
+    (data) => {
+      const {convoId} = data;
+      let typingConvos = [...typingStatus];
+      if(!typingConvos.includes(convoId)){
+        typingConvos.push(convoId); 
+      }
+      setTypingStatus(typingConvos);
+      //reset the typing status update after 5 seconds without additional input
+      clearTimeout(timeout);
+      timeout = setTimeout(function(){ setTypingStatus(typingStatus.filter((id) => id !== convoId))},5000);
+    },
+    [setTypingStatus, typingStatus]
+  );
+
 
   const addOnlineUser = useCallback((id) => {
     setConversations((prev) =>
@@ -155,6 +236,8 @@ const Home = ({ user, logout }) => {
     socket.on('add-online-user', addOnlineUser);
     socket.on('remove-offline-user', removeOfflineUser);
     socket.on('new-message', addMessageToConversation);
+    socket.on('new-read', updateReadReceipts);
+    socket.on('new-typing-event', updateIncomingMessageStatus);
 
     return () => {
       // before the component is destroyed
@@ -162,8 +245,10 @@ const Home = ({ user, logout }) => {
       socket.off('add-online-user', addOnlineUser);
       socket.off('remove-offline-user', removeOfflineUser);
       socket.off('new-message', addMessageToConversation);
+      socket.off('new-read', updateReadReceipts);
+      socket.off('new-typing-event', updateIncomingMessageStatus);
     };
-  }, [addMessageToConversation, addOnlineUser, removeOfflineUser, socket]);
+  }, [updateIncomingMessageStatus, updateReadReceipts, addMessageToConversation, addOnlineUser, removeOfflineUser, socket]);
 
   useEffect(() => {
     // when fetching, prevent redirect
@@ -209,12 +294,15 @@ const Home = ({ user, logout }) => {
           clearSearchedUsers={clearSearchedUsers}
           addSearchedUsers={addSearchedUsers}
           setActiveChat={setActiveChat}
+          activelyTyping={typingStatus}
         />
         <ActiveChat
           activeConversation={activeConversation}
           conversations={conversations}
           user={user}
           postMessage={postMessage}
+          updateTypingStatus={updateTypingStatus}
+          activelyTyping={typingStatus}
         />
       </Grid>
     </>

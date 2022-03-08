@@ -15,12 +15,13 @@ const useStyles = makeStyles(() => ({
   },
 }));
 
-const Input = ({ otherUser, conversationId, user, postMessage }) => {
+const Input = ({ otherUser, conversationId, user, postMessage, updateTypingStatus }) => {
   const classes = useStyles();
   const [text, setText] = useState('');
 
   const handleChange = (event) => {
     setText(event.target.value);
+    updateTypingStatus(conversationId);
   };
 
   const handleSubmit = async (event) => {

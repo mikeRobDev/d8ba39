@@ -18,8 +18,8 @@ router.get("/", async (req, res, next) => {
           user2Id: userId,
         },
       },
-      attributes: ["id"],
-      //order our conversations by ____ but the messages in each conversation by earliest message creation time first
+      attributes: ["id", "mostRecentRead"],
+      //order our conversations by the most recent activity but the messages in each conversation by earliest message creation time first
       order: [[Message, "createdAt", "ASC"]],
       include: [
         { model: Message, order: ["createdAt", "ASC"] },
@@ -51,6 +51,26 @@ router.get("/", async (req, res, next) => {
     for (let i = 0; i < conversations.length; i++) {
       const convo = conversations[i];
       const convoJSON = convo.toJSON();
+      
+      //set a property "unreadMsgCount" so that the frontend will have easier access
+      if (convoJSON.mostRecentRead) {
+        let readIndex = null;
+        let newMsgIndex = null;
+        for (let k = 0; k < convoJSON.messages.length; k++){
+          let msg = convoJSON.messages[k];
+          let receipt = convoJSON.mostRecentRead;
+          if (msg.text === receipt) {
+            readIndex = k;
+          }
+          if (readIndex && msg.senderId !== userId){
+            newMsgIndex = k;
+          }
+        }
+        convoJSON.unreadMsgCount = newMsgIndex - readIndex;
+      }else{
+        let messagesReceived = convoJSON.messages.filter((message) => message.senderId !== userId).length;
+        convoJSON.unreadMsgCount = messagesReceived;
+      }
 
       // set a property "otherUser" so that frontend will have easier access
       if (convoJSON.user1) {
@@ -77,6 +97,33 @@ router.get("/", async (req, res, next) => {
 
     res.json(conversations);
   } catch (error) {
+    next(error);
+  }
+});
+
+//update the read receipts of a given conversation
+router.put("/", async (req, res, next) => {
+  try {
+    const convoToChange = await Conversation.findByPk(req.body.convoId).then();
+    if(convoToChange){
+      convoToChange.mostRecentRead = req.body.newestReceipt;
+
+      Conversation.update({
+        mostRecentRead: req.body.newestReceipt,
+      }, {
+        where: {
+          id: convoToChange.id
+        }
+      }).then(() => {
+        res.json(convoToChange);
+      }).catch((error) => {
+        console.log(error);
+        res.sendStatus(400)
+      });
+    }else{
+      res.sendStatus(404);
+    }
+  } catch (error){
     next(error);
   }
 });
