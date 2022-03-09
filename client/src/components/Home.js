@@ -115,8 +115,6 @@ const Home = ({ user, logout }) => {
           //only update the unreadMsgCount for a user that is not actively viewing the conversation we just updated (otherwise they read it on receipt)
           if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
             convo.unreadMsgCount = convo.unreadMsgCount + 1;
-          }else if (message.senderId !== user.id){
-            convo.mostRecentRead = message.text;
           }
         }
       });
@@ -126,7 +124,7 @@ const Home = ({ user, logout }) => {
   );
 
   const saveReceipt = async (body) => {
-    const { data } = await axios.put('/api/conversations', body);
+    const { data } = await axios.put('/api/messages', body);
     return data;
   };
 
@@ -150,7 +148,11 @@ const Home = ({ user, logout }) => {
       let readerConvos = [...conversations];
       readerConvos.forEach((convo) => {
         if (convo.id === data.id) {
-          convo.mostRecentRead = readMessage.text;
+          convo.messages.forEach((msg) => {
+            if (msg.text === readMessage.text){
+              msg.readRecently = true;
+            }
+          });
           convo.unreadMsgCount = 0;
         }
       });

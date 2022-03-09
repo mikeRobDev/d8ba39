@@ -18,7 +18,7 @@ router.get("/", async (req, res, next) => {
           user2Id: userId,
         },
       },
-      attributes: ["id", "mostRecentRead"],
+      attributes: ["id"],
       //order our conversations by the most recent activity but the messages in each conversation by earliest message creation time first
       order: [[Message, "createdAt", "ASC"]],
       include: [
@@ -51,6 +51,17 @@ router.get("/", async (req, res, next) => {
     for (let i = 0; i < conversations.length; i++) {
       const convo = conversations[i];
       const convoJSON = convo.toJSON();
+      //set a property "mostRecentRead" so that the frontend will have easier access
+      if (convoJSON.messages.length > 0) {
+        for (let k = 0; k < convoJSON.messages.length; k++){
+          let msg = convoJSON.messages[k];
+          if (msg.senderId !== userId && msg.readRecently){  
+            convoJSON.mostRecentRead = msg.text;
+          }
+        }
+      }else{
+        convoJSON.mostRecentRead = null;
+      }
       
       //set a property "unreadMsgCount" so that the frontend will have easier access
       if (convoJSON.mostRecentRead) {
@@ -97,33 +108,6 @@ router.get("/", async (req, res, next) => {
 
     res.json(conversations);
   } catch (error) {
-    next(error);
-  }
-});
-
-//update the read receipts of a given conversation
-router.put("/", async (req, res, next) => {
-  try {
-    const convoToChange = await Conversation.findByPk(req.body.convoId).then();
-    if(convoToChange){
-      convoToChange.mostRecentRead = req.body.newestReceipt;
-
-      Conversation.update({
-        mostRecentRead: req.body.newestReceipt,
-      }, {
-        where: {
-          id: convoToChange.id
-        }
-      }).then(() => {
-        res.json(convoToChange);
-      }).catch((error) => {
-        console.log(error);
-        res.sendStatus(400)
-      });
-    }else{
-      res.sendStatus(404);
-    }
-  } catch (error){
     next(error);
   }
 });

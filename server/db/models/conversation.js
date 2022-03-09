@@ -2,12 +2,7 @@ const { Op, Sequelize } = require("sequelize");
 const db = require("../db");
 const Message = require("./message");
 
-const Conversation = db.define("conversation", {
-  mostRecentRead: {
-    type: Sequelize.STRING,
-    allowNull: true, //indicates no messages in conversation has been read by recipient client
-  },
-});
+const Conversation = db.define("conversation", {});
 
 // find conversation given two user Ids
 
