@@ -50,8 +50,19 @@ const Home = ({ user, logout }) => {
   };
 
   const saveMessage = async (body) => {
-    const { data } = await axios.post('/api/messages', body);
-    return data;
+    try {
+      const { data } = await axios.post('/api/messages', body);
+
+      if (!body.conversationId) {
+        addNewConvo(body.recipientId, data.message);
+      } else {
+        addMessageToConversation(data);
+      }
+
+      sendMessage(data, body);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const sendMessage = (data, body) => {
@@ -63,32 +74,25 @@ const Home = ({ user, logout }) => {
   };
 
   const postMessage = (body) => {
-    //use .then() method to ensure that the Promise is fulfilled before we continue with our handler actions for the post request
-    saveMessage(body).then((data) => {
-      if (!body.conversationId) {
-        addNewConvo(body.recipientId, data.message);
-      } else {
-        addMessageToConversation(data);
-      }
-
-      sendMessage(data, body);
-    }).catch (error => console.error(error));
-  }
+    saveMessage(body);
+  };
 
   const addNewConvo = useCallback(
     (recipientId, message) => {
-      let extendedConvos = [...conversations];
-      extendedConvos.forEach((convo) => {
-        if (convo.otherUser.id === recipientId) {
-          convo.messages.push(message);
-          convo.latestMessageText = message.text;
-          convo.id = message.conversationId;
-        }
-      });
-      setConversations(extendedConvos);
-    },
-    [setConversations, conversations]
-  );
+      setConversations((prev) =>
+        prev.map((convo) => {
+          if (convo.otherUser.id === recipientId) {
+            const convoCopy = { ...convo };
+            convoCopy.messages = [ ...convoCopy.messages, message ];
+            convoCopy.latestMessageText = message.text;
+            convoCopy.id = message.conversationId;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+    }, []);
 
   const addMessageToConversation = useCallback(
     (data) => {
@@ -104,17 +108,19 @@ const Home = ({ user, logout }) => {
         setConversations((prev) => [newConvo, ...prev]);
       }
 
-      let progressingConvos = [...conversations];
-      progressingConvos.forEach((convo) => {
-        if (convo.id === message.conversationId) {
-          convo.messages.push(message);
-          convo.latestMessageText = message.text;
-        }
-      });
-      setConversations(progressingConvos);
-    },
-    [setConversations, conversations]
-  );
+      setConversations((prev) =>
+        prev.map((convo) => {
+          if (convo.id === message.conversationId) {
+            const convoCopy = { ...convo };
+            convoCopy.messages = [ ...convoCopy.messages, message ];
+            convoCopy.latestMessageText = message.text;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+    }, []);
 
   const setActiveChat = (username) => {
     setActiveConversation(username);
