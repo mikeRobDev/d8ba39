@@ -52,8 +52,19 @@ const Home = ({ user, logout }) => {
   };
 
   const saveMessage = async (body) => {
-    const { data } = await axios.post('/api/messages', body);
-    return data;
+    try {
+      const { data } = await axios.post('/api/messages', body);
+
+      if (!body.conversationId) {
+        addNewConvo(body.recipientId, data.message);
+      } else {
+        addMessageToConversation(data);
+      }
+
+      sendMessage(data, body);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const sendMessage = (data, body) => {
@@ -65,32 +76,26 @@ const Home = ({ user, logout }) => {
   };
 
   const postMessage = (body) => {
-    //use .then() method to ensure that the Promise is fulfilled before we continue with our handler actions for the post request
-    saveMessage(body).then((data) => {
-      if (!body.conversationId) {
-        addNewConvo(body.recipientId, data.message);
-      } else {
-        addMessageToConversation(data);
-      }
-
-      sendMessage(data, body);
-    }).catch (error => console.error(error));
-  }
+    saveMessage(body);
+  };
 
   const addNewConvo = useCallback(
     (recipientId, message) => {
-      let extendedConvos = [...conversations];
-      extendedConvos.forEach((convo) => {
-        if (convo.otherUser.id === recipientId) {
-          convo.messages.push(message);
-          convo.latestMessageText = message.text;
-          convo.id = message.conversationId;
-        }
-      });
-      setConversations(extendedConvos);
-    },
-    [setConversations, conversations]
-  );
+
+      setConversations((prev) =>
+        prev.map((convo) => {
+          if (convo.otherUser.id === recipientId) {
+            const convoCopy = { ...convo };
+            convoCopy.messages = [ ...convoCopy.messages, message ];
+            convoCopy.latestMessageText = message.text;
+            convoCopy.id = message.conversationId;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+    }, []);
 
   const addMessageToConversation = useCallback(
     (data) => {
@@ -107,25 +112,54 @@ const Home = ({ user, logout }) => {
         setConversations((prev) => [newConvo, ...prev]);
       }
 
-      let progressingConvos = [...conversations];
-      progressingConvos.forEach((convo) => {
-        if (convo.id === message.conversationId) {
-          convo.messages.push(message);
-          convo.latestMessageText = message.text;
-          //only update the unreadMsgCount for a user that is not actively viewing the conversation we just updated (otherwise they read it on receipt)
-          if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
-            convo.unreadMsgCount = convo.unreadMsgCount + 1;
+      setConversations((prev) =>
+        prev.map((convo) => {
+          if (convo.id === message.conversationId) {
+            const convoCopy = { ...convo };
+            convoCopy.messages = [ ...convoCopy.messages, message ];
+            convoCopy.latestMessageText = message.text;
+            //only update the unreadMsgCount for a user that is not actively viewing the conversation we just updated (otherwise they read it on receipt)
+            if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
+              convoCopy.unreadMsgCount = convo.unreadMsgCount + 1;
+            }
+            return convoCopy;
+          } else {
+            return convo;
           }
-        }
-      });
-      setConversations(progressingConvos);
-    },
-    [setConversations, conversations, user, activeConversation]
-  );
+        })
+      );
+    }, [user, activeConversation]);
 
   const saveReceipt = async (body) => {
-    const { data } = await axios.put('/api/messages', body);
-    return data;
+    try {
+      const { data } = await axios.put('/api/messages', body);
+      const { id, recentMessage } = data;
+      //update the client's readReceipts for re-rendering of Sidebar and ActiveChat component elements
+      setConversations((prev) =>
+        prev.map((convo) => {
+          if (convo.id === id) {
+            const convoCopy = { ...convo };
+            convoCopy.messages = convoCopy.messages.map((msg) => {
+              if (msg.text === recentMessage){
+                msg.readRecently = true;
+              }
+              return msg;
+            });
+            convoCopy.unreadMsgCount = 0;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+
+      socket.emit('new-read', {
+        conversationToUpdate: id,
+        messageToUpdate: recentMessage,
+      });
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const setActiveChat = (username) => {
@@ -143,42 +177,26 @@ const Home = ({ user, logout }) => {
       newestReceipt: readMessage.text,
     };
 
-    saveReceipt(tempBody).then((data) => {
-      //update the client's readReceipts for re-rendering of Sidebar and ActiveChat component elements
-      let readerConvos = [...conversations];
-      readerConvos.forEach((convo) => {
-        if (convo.id === data.id) {
-          convo.messages.forEach((msg) => {
-            if (msg.text === readMessage.text){
-              msg.readRecently = true;
-            }
-          });
-          convo.unreadMsgCount = 0;
-        }
-      });
-      setConversations(readerConvos);
-
-      socket.emit('new-read', {
-        conversationToUpdate: readConvo.id,
-        messageToUpdate: readMessage.text,
-      });
-    });
+    saveReceipt(tempBody);
   };
 
   const updateReadReceipts = useCallback(
     (data) => {
       const {convoToUpdate, msgToUpdate} = data;
 
-      let viewingConvos = [...conversations];
-      viewingConvos.forEach((convo) => {
-        if (convo.id === convoToUpdate) {
-          convo.mostRecentRead = msgToUpdate;
-        }
-      });
-      setConversations(viewingConvos);
-    },
-    [setConversations, conversations]
-  );
+      setConversations((prev) => 
+        prev.map((convo) => {
+          if (convo.id === convoToUpdate) {
+            const convoCopy = { ...convo };
+            convoCopy.mostRecentRead = msgToUpdate;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+
+    }, []);
 
   const updateTypingStatus = (convoId) => {
     socket.emit('new-typing-event', {

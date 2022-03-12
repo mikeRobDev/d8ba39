@@ -49,9 +49,10 @@ router.put("/", async (req, res, next) => {
   try {
     const userId = req.user.id;
     const {convoId, newestReceipt} = req.body
-    const msgToChange = await Message.findOne({where: {conversationId: convoId, senderId: {[Op.not] : userId}, text: newestReceipt}}).then();
+    const msgToChange = await Message.findOne({where: {conversationId: convoId, senderId: {[Op.not] : userId}, text: newestReceipt}});
+
     if(msgToChange){
-      Message.update({
+      await Message.update({
         readRecently: true,
       }, {
         where: {
@@ -59,9 +60,9 @@ router.put("/", async (req, res, next) => {
           senderId: {[Op.not] : userId}, 
           text: newestReceipt
         }
-      }).then(()=> {
-        res.json({id: msgToChange.conversationId});
       });
+      res.json({id: msgToChange.conversationId, recentMessage: msgToChange.text});
+      
     }else{
       res.sendStatus(400);
     }
