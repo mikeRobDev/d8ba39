@@ -21,9 +21,11 @@ const Home = ({ user, logout }) => {
 
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
+  const [typingStatus, setTypingStatus] = useState([]);
 
   const classes = useStyles();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  var timeout;
 
   const addSearchedUsers = (users) => {
     const currentUsers = {};
@@ -94,6 +96,54 @@ const Home = ({ user, logout }) => {
       );
     }, []);
 
+  const saveReceipt = useCallback((body) => {
+    (async () => {
+      try {
+        const { data } = await axios.put('/api/messages', body);
+        const { id, recentMessage } = data;
+        setConversations((prev) =>
+          prev.map((convo) => {
+            if (convo.id === id) {
+              const convoCopy = { ...convo };
+              convoCopy.messages = convoCopy.messages.map((message) => {
+                if (message.text === recentMessage){
+                  message.readRecently = true;
+                }
+                return message;
+              });
+              convoCopy.unreadMsgCount = 0;
+              return convoCopy;
+            } else {
+              return convo;
+            }
+          })
+        );
+
+        socket.emit('new-read', {
+          conversationToUpdate: id,
+          messageToUpdate: recentMessage,
+        });
+      } catch (error) {
+        console.error(error);
+      }
+  })();
+  }, [socket]);
+
+  const sendReadReceipts = useCallback((username) => {
+    let readConvo = conversations.find(
+      (conversation) => conversation.otherUser.username === username
+    );
+    let readMessage = readConvo.messages.slice().reverse().find(
+      (msg) => msg.senderId !== user.id
+    );
+    let tempBody = {
+      convoId: readConvo.id,
+      newestReceipt: readMessage.text,
+    };
+
+    saveReceipt(tempBody);
+  }, [saveReceipt, conversations, user]);
+
   const addMessageToConversation = useCallback(
     (data) => {
       // if sender isn't null, that means the message needs to be put in a brand new convo
@@ -103,6 +153,7 @@ const Home = ({ user, logout }) => {
           id: message.conversationId,
           otherUser: sender,
           messages: [message],
+          unreadMsgCount: 1,
         };
         newConvo.latestMessageText = message.text;
         setConversations((prev) => [newConvo, ...prev]);
@@ -114,17 +165,70 @@ const Home = ({ user, logout }) => {
             const convoCopy = { ...convo };
             convoCopy.messages = [ ...convoCopy.messages, message ];
             convoCopy.latestMessageText = message.text;
+            if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
+              convoCopy.unreadMsgCount = convo.unreadMsgCount + 1;
+            }
             return convoCopy;
           } else {
             return convo;
           }
         })
       );
-    }, []);
+
+      let activelyReadConvo = conversations.find(
+        (conversation) => conversation.id === message.conversationId
+      );
+      if (activeConversation === activelyReadConvo.otherUser.username){
+        (async () => {
+          sendReadReceipts(activeConversation);
+        })()
+      }
+    }, [user, activeConversation, conversations, sendReadReceipts]);
 
   const setActiveChat = (username) => {
     setActiveConversation(username);
+
+    sendReadReceipts(username);
   };
+
+  const updateReadReceipts = useCallback(
+    (data) => {
+      const {convoToUpdate, msgToUpdate} = data;
+
+      setConversations((prev) => 
+        prev.map((convo) => {
+          if (convo.id === convoToUpdate) {
+            const convoCopy = { ...convo };
+            convoCopy.mostRecentRead = msgToUpdate;
+            return convoCopy;
+          } else {
+            return convo;
+          }
+        })
+      );
+
+    }, []);
+
+  const updateTypingStatus = (convoId) => {
+    socket.emit('new-typing-event', {
+      typingConvo: convoId,
+    });
+  }
+
+  const updateIncomingMessageStatus = useCallback(
+    (data) => {
+      const {convoId} = data;
+      let typingConvos = [...typingStatus];
+      if(!typingConvos.includes(convoId)){
+        typingConvos.push(convoId); 
+      }
+      setTypingStatus(typingConvos);
+      clearTimeout(timeout);
+      timeout = setTimeout(function(){ setTypingStatus(typingStatus.filter((id) => id !== convoId))},5000);
+    },
+    [setTypingStatus, typingStatus]
+  );
+
 
   const addOnlineUser = useCallback((id) => {
     setConversations((prev) =>
@@ -161,6 +265,8 @@ const Home = ({ user, logout }) => {
     socket.on('add-online-user', addOnlineUser);
     socket.on('remove-offline-user', removeOfflineUser);
     socket.on('new-message', addMessageToConversation);
+    socket.on('new-read', updateReadReceipts);
+    socket.on('new-typing-event', updateIncomingMessageStatus);
 
     return () => {
       // before the component is destroyed
@@ -168,8 +274,10 @@ const Home = ({ user, logout }) => {
       socket.off('add-online-user', addOnlineUser);
       socket.off('remove-offline-user', removeOfflineUser);
       socket.off('new-message', addMessageToConversation);
+      socket.off('new-read', updateReadReceipts);
+      socket.off('new-typing-event', updateIncomingMessageStatus);
     };
-  }, [addMessageToConversation, addOnlineUser, removeOfflineUser, socket]);
+  }, [updateIncomingMessageStatus, updateReadReceipts, addMessageToConversation, addOnlineUser, removeOfflineUser, socket]);
 
   useEffect(() => {
     // when fetching, prevent redirect
@@ -215,12 +323,15 @@ const Home = ({ user, logout }) => {
           clearSearchedUsers={clearSearchedUsers}
           addSearchedUsers={addSearchedUsers}
           setActiveChat={setActiveChat}
+          activelyTyping={typingStatus}
         />
         <ActiveChat
           activeConversation={activeConversation}
           conversations={conversations}
           user={user}
           postMessage={postMessage}
+          updateTypingStatus={updateTypingStatus}
+          activelyTyping={typingStatus}
         />
       </Grid>
     </>

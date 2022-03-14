@@ -1,4 +1,3 @@
-import React from 'react';
 import { makeStyles } from '@material-ui/core/styles';
 import { Box } from '@material-ui/core';
 import { Input, Header, Messages } from './index';
@@ -24,6 +23,8 @@ const ActiveChat = ({
   conversations,
   activeConversation,
   postMessage,
+  updateTypingStatus,
+  activelyTyping
 }) => {
   const classes = useStyles();
 
@@ -52,12 +53,15 @@ const ActiveChat = ({
                   messages={conversation.messages}
                   otherUser={conversation.otherUser}
                   userId={user.id}
+                  recentRead={conversation.mostRecentRead}
+                  activelyTyping={activelyTyping}
                 />
                 <Input
                   otherUser={conversation.otherUser}
                   conversationId={conversation.id || null}
                   user={user}
                   postMessage={postMessage}
+                  updateTypingStatus={updateTypingStatus}
                 />
               </>
             )}

@@ -19,7 +19,6 @@ router.get("/", async (req, res, next) => {
         },
       },
       attributes: ["id"],
-      //order our conversations by ____ but the messages in each conversation by earliest message creation time first
       order: [[Message, "createdAt", "ASC"]],
       include: [
         { model: Message, order: ["createdAt", "ASC"] },
@@ -51,6 +50,35 @@ router.get("/", async (req, res, next) => {
     for (let i = 0; i < conversations.length; i++) {
       const convo = conversations[i];
       const convoJSON = convo.toJSON();
+      if (convoJSON.messages.length > 0) {
+        for (let k = 0; k < convoJSON.messages.length; k++){
+          let msg = convoJSON.messages[k];
+          if (msg.senderId === userId && msg.readRecently){  
+            convoJSON.mostRecentRead = msg.text;
+          }
+        }
+      }else{
+        convoJSON.mostRecentRead = null;
+      }
+      
+      let messagesReceived = convoJSON.messages.filter((message) => message.senderId !== userId).length;
+      if (convoJSON.mostRecentRead) {
+        let readMessageExists = false;
+        let unreadMessages = 0;
+        for (let k = 0; k < convoJSON.messages.length; k++){
+          let msg = convoJSON.messages[k];
+          if (readMessageExists && msg.senderId !== userId){
+            unreadMessages += 1;
+          }
+          if (msg.readRecently && msg.senderId !== userId) {
+            readMessageExists = true;
+          }
+        }
+        convoJSON.unreadMsgCount = unreadMessages;
+
+      }else{
+        convoJSON.unreadMsgCount = messagesReceived;
+      }
 
       // set a property "otherUser" so that frontend will have easier access
       if (convoJSON.user1) {
@@ -68,7 +96,6 @@ router.get("/", async (req, res, next) => {
         convoJSON.otherUser.online = false;
       }
 
-      // set properties for notification count and latest message preview
       convoJSON.latestMessageText = convoJSON.messages[convoJSON.messages.length - 1].text;
       conversations[i] = convoJSON;
     }
