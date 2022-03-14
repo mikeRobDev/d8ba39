@@ -45,7 +45,6 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-//handles read receipt updates, expects a convoId and newestReciept text
 router.put("/", async (req, res, next) => {
   try {
     if (!req.user) {
