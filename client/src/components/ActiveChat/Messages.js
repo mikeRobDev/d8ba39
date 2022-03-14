@@ -8,10 +8,11 @@ const useStyles = makeStyles(() => ({
   avatar: {
     height: 20,
     width: 20,
-    marginTop: 5,
-    marginBottom: 5,
     float: 'right',
   },
+  readWrapper: {
+    paddingBottom: '25px',
+  }
 }));
 
 const Messages = (props) => {
@@ -24,21 +25,16 @@ const Messages = (props) => {
         const time = moment(message.createdAt).format('h:mm');
 
         return message.senderId === userId ? (
-          //second conditional to add otherUser avatar underneath the last message they have read
-          (message.text === recentRead ? (
-            <div>
-              <SenderBubble key={message.id} text={message.text} time={time} />
+          <Box className={message.text === recentRead ? classes.readWrapper : ""} key={message.id}>
+            <SenderBubble text={message.text} time={time} />
+            { message.text === recentRead && 
               <Avatar
-                key={otherUser.id}
                 alt={otherUser.username}
                 src={otherUser.photoUrl}
                 className={classes.avatar}
-              />
-            </div>
-          ) : (
-              <SenderBubble key={message.id} text={message.text} time={time} />
-          ))
-
+              /> 
+            }
+          </Box>
         ) : (
           <OtherUserBubble
             key={message.id}

@@ -32,7 +32,7 @@ const useStyles = makeStyles((theme) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  no_bubble: {
+  noBubble: {
     hidden: 'true',
   },
   text: {
@@ -60,7 +60,7 @@ const ChatContent = ({ conversation, activelyTyping }) => {
           {activelyTyping.includes(conversation.id) ? 'Typing...' : latestMessageText}
         </Typography>
       </Box>
-      <Box className={unreadMsgCount > 0 ? classes.bubble : classes.no_bubble}>
+      <Box className={unreadMsgCount > 0 ? classes.bubble : classes.noBubble}>
         <Typography className={classes.text}>{unreadMsgCount}</Typography>
       </Box>
     </Box>

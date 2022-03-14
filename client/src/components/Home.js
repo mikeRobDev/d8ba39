@@ -97,6 +97,54 @@ const Home = ({ user, logout }) => {
       );
     }, []);
 
+    const saveReceipt = useCallback((body) => {
+      (async () => {
+        try {
+          const { data } = await axios.put('/api/messages', body);
+          const { id, recentMessage } = data;
+          setConversations((prev) =>
+            prev.map((convo) => {
+              if (convo.id === id) {
+                const convoCopy = { ...convo };
+                convoCopy.messages = convoCopy.messages.map((message) => {
+                  if (message.text === recentMessage){
+                    message.readRecently = true;
+                  }
+                  return message;
+                });
+                convoCopy.unreadMsgCount = 0;
+                return convoCopy;
+              } else {
+                return convo;
+              }
+            })
+          );
+    
+          socket.emit('new-read', {
+            conversationToUpdate: id,
+            messageToUpdate: recentMessage,
+          });
+        } catch (error) {
+          console.error(error);
+        }
+    })();
+    }, [socket]);
+
+    const sendReadReceipts = useCallback((username) => {
+      let readConvo = conversations.find(
+        (conversation) => conversation.otherUser.username === username
+      );
+      let readMessage = readConvo.messages.slice().reverse().find(
+        (msg) => msg.senderId !== user.id
+      );
+      let tempBody = {
+        convoId: readConvo.id,
+        newestReceipt: readMessage.text,
+      };
+  
+      saveReceipt(tempBody);
+    }, [saveReceipt, conversations, user]);
+
   const addMessageToConversation = useCallback(
     (data) => {
       // if sender isn't null, that means the message needs to be put in a brand new convo
@@ -118,7 +166,6 @@ const Home = ({ user, logout }) => {
             const convoCopy = { ...convo };
             convoCopy.messages = [ ...convoCopy.messages, message ];
             convoCopy.latestMessageText = message.text;
-            //only update the unreadMsgCount for a user that is not actively viewing the conversation we just updated (otherwise they read it on receipt)
             if (message.senderId !== user.id && activeConversation !== convo.otherUser.username){
               convoCopy.unreadMsgCount = convo.unreadMsgCount + 1;
             }
@@ -128,56 +175,21 @@ const Home = ({ user, logout }) => {
           }
         })
       );
-    }, [user, activeConversation]);
 
-  const saveReceipt = async (body) => {
-    try {
-      const { data } = await axios.put('/api/messages', body);
-      const { id, recentMessage } = data;
-      //update the client's readReceipts for re-rendering of Sidebar and ActiveChat component elements
-      setConversations((prev) =>
-        prev.map((convo) => {
-          if (convo.id === id) {
-            const convoCopy = { ...convo };
-            convoCopy.messages = convoCopy.messages.map((msg) => {
-              if (msg.text === recentMessage){
-                msg.readRecently = true;
-              }
-              return msg;
-            });
-            convoCopy.unreadMsgCount = 0;
-            return convoCopy;
-          } else {
-            return convo;
-          }
-        })
+      let activelyReadConvo = conversations.find(
+        (conversation) => conversation.id === message.conversationId
       );
-
-      socket.emit('new-read', {
-        conversationToUpdate: id,
-        messageToUpdate: recentMessage,
-      });
-    } catch (error) {
-      console.error(error);
-    }
-  };
+      if (activeConversation === activelyReadConvo.otherUser.username){
+        (async () => {
+          sendReadReceipts(activeConversation);
+        })()
+      }
+    }, [user, activeConversation, conversations, sendReadReceipts]);
 
   const setActiveChat = (username) => {
     setActiveConversation(username);
 
-    //setting a new active chat (loading the conversation with the given username) also updates the mostRecentRead 
-    let readConvo = conversations.find(
-      (conversation) => conversation.otherUser.username === username
-    );
-    let readMessage = readConvo.messages.slice().reverse().find(
-      (msg) => msg.senderId !== user.id
-    );
-    let tempBody = {
-      convoId: readConvo.id,
-      newestReceipt: readMessage.text,
-    };
-
-    saveReceipt(tempBody);
+    sendReadReceipts(username);
   };
 
   const updateReadReceipts = useCallback(
@@ -204,7 +216,6 @@ const Home = ({ user, logout }) => {
     });
   }
 
-  //socket handler to notify our client of other users that are currently typing within our conversations
   const updateIncomingMessageStatus = useCallback(
     (data) => {
       const {convoId} = data;
@@ -213,7 +224,6 @@ const Home = ({ user, logout }) => {
         typingConvos.push(convoId); 
       }
       setTypingStatus(typingConvos);
-      //reset the typing status update after 5 seconds without additional input
       clearTimeout(timeout);
       timeout = setTimeout(function(){ setTypingStatus(typingStatus.filter((id) => id !== convoId))},5000);
     },

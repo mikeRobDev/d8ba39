@@ -19,7 +19,6 @@ router.get("/", async (req, res, next) => {
         },
       },
       attributes: ["id"],
-      //order our conversations by the most recent activity but the messages in each conversation by earliest message creation time first
       order: [[Message, "createdAt", "ASC"]],
       include: [
         { model: Message, order: ["createdAt", "ASC"] },
@@ -51,11 +50,10 @@ router.get("/", async (req, res, next) => {
     for (let i = 0; i < conversations.length; i++) {
       const convo = conversations[i];
       const convoJSON = convo.toJSON();
-      //set a property "mostRecentRead" so that the frontend will have easier access
       if (convoJSON.messages.length > 0) {
         for (let k = 0; k < convoJSON.messages.length; k++){
           let msg = convoJSON.messages[k];
-          if (msg.senderId !== userId && msg.readRecently){  
+          if (msg.senderId === userId && msg.readRecently){  
             convoJSON.mostRecentRead = msg.text;
           }
         }
@@ -63,23 +61,22 @@ router.get("/", async (req, res, next) => {
         convoJSON.mostRecentRead = null;
       }
       
-      //set a property "unreadMsgCount" so that the frontend will have easier access
+      let messagesReceived = convoJSON.messages.filter((message) => message.senderId !== userId).length;
       if (convoJSON.mostRecentRead) {
-        let readIndex = null;
-        let newMsgIndex = null;
+        let readMessageExists = false;
+        let unreadMessages = 0;
         for (let k = 0; k < convoJSON.messages.length; k++){
           let msg = convoJSON.messages[k];
-          let receipt = convoJSON.mostRecentRead;
-          if (msg.text === receipt) {
-            readIndex = k;
+          if (readMessageExists && msg.senderId !== userId){
+            unreadMessages += 1;
           }
-          if (readIndex && msg.senderId !== userId){
-            newMsgIndex = k;
+          if (msg.readRecently && msg.senderId !== userId) {
+            readMessageExists = true;
           }
         }
-        convoJSON.unreadMsgCount = newMsgIndex - readIndex;
+        convoJSON.unreadMsgCount = unreadMessages;
+
       }else{
-        let messagesReceived = convoJSON.messages.filter((message) => message.senderId !== userId).length;
         convoJSON.unreadMsgCount = messagesReceived;
       }
 
@@ -99,7 +96,6 @@ router.get("/", async (req, res, next) => {
         convoJSON.otherUser.online = false;
       }
 
-      // set properties for notification count and latest message preview
       convoJSON.latestMessageText = convoJSON.messages[convoJSON.messages.length - 1].text;
       conversations[i] = convoJSON;
     }
