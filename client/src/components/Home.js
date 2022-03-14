@@ -81,7 +81,6 @@ const Home = ({ user, logout }) => {
 
   const addNewConvo = useCallback(
     (recipientId, message) => {
-
       setConversations((prev) =>
         prev.map((convo) => {
           if (convo.otherUser.id === recipientId) {
@@ -97,53 +96,53 @@ const Home = ({ user, logout }) => {
       );
     }, []);
 
-    const saveReceipt = useCallback((body) => {
-      (async () => {
-        try {
-          const { data } = await axios.put('/api/messages', body);
-          const { id, recentMessage } = data;
-          setConversations((prev) =>
-            prev.map((convo) => {
-              if (convo.id === id) {
-                const convoCopy = { ...convo };
-                convoCopy.messages = convoCopy.messages.map((message) => {
-                  if (message.text === recentMessage){
-                    message.readRecently = true;
-                  }
-                  return message;
-                });
-                convoCopy.unreadMsgCount = 0;
-                return convoCopy;
-              } else {
-                return convo;
-              }
-            })
-          );
-    
-          socket.emit('new-read', {
-            conversationToUpdate: id,
-            messageToUpdate: recentMessage,
-          });
-        } catch (error) {
-          console.error(error);
-        }
-    })();
-    }, [socket]);
+  const saveReceipt = useCallback((body) => {
+    (async () => {
+      try {
+        const { data } = await axios.put('/api/messages', body);
+        const { id, recentMessage } = data;
+        setConversations((prev) =>
+          prev.map((convo) => {
+            if (convo.id === id) {
+              const convoCopy = { ...convo };
+              convoCopy.messages = convoCopy.messages.map((message) => {
+                if (message.text === recentMessage){
+                  message.readRecently = true;
+                }
+                return message;
+              });
+              convoCopy.unreadMsgCount = 0;
+              return convoCopy;
+            } else {
+              return convo;
+            }
+          })
+        );
 
-    const sendReadReceipts = useCallback((username) => {
-      let readConvo = conversations.find(
-        (conversation) => conversation.otherUser.username === username
-      );
-      let readMessage = readConvo.messages.slice().reverse().find(
-        (msg) => msg.senderId !== user.id
-      );
-      let tempBody = {
-        convoId: readConvo.id,
-        newestReceipt: readMessage.text,
-      };
-  
-      saveReceipt(tempBody);
-    }, [saveReceipt, conversations, user]);
+        socket.emit('new-read', {
+          conversationToUpdate: id,
+          messageToUpdate: recentMessage,
+        });
+      } catch (error) {
+        console.error(error);
+      }
+  })();
+  }, [socket]);
+
+  const sendReadReceipts = useCallback((username) => {
+    let readConvo = conversations.find(
+      (conversation) => conversation.otherUser.username === username
+    );
+    let readMessage = readConvo.messages.slice().reverse().find(
+      (msg) => msg.senderId !== user.id
+    );
+    let tempBody = {
+      convoId: readConvo.id,
+      newestReceipt: readMessage.text,
+    };
+
+    saveReceipt(tempBody);
+  }, [saveReceipt, conversations, user]);
 
   const addMessageToConversation = useCallback(
     (data) => {
